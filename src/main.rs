@@ -11,6 +11,10 @@ mod config;
 enum Commands {
     Or {
         config: PathBuf,
+        #[arg(long)]
+        rule_filter: Option<String>,
+        #[arg(long)]
+        dump: bool,
         first_rule: String,
         other_rules: Vec<String>,
     },
@@ -35,21 +39,46 @@ impl Commands {
             Self::And { config, .. } => config,
         }
     }
+    fn dump(&self) -> bool {
+        match self {
+            Self::Or { dump, .. } => *dump,
+            _ => false,
+        }
+    }
+    fn rule_filter(&self) -> Option<&str> {
+        match self {
+            Self::Or { rule_filter, .. } => rule_filter.as_deref(),
+            _ => None,
+        }
+    }
     fn rules(&self) -> Vec<String> {
         match self {
-            Self::Or { first_rule, other_rules, .. } => {
+            Self::Or {
+                first_rule,
+                other_rules,
+                ..
+            } => {
                 let mut rules = Vec::with_capacity(other_rules.len() + 1);
                 rules.push(first_rule.clone());
                 rules.extend(other_rules.iter().cloned());
                 rules
             }
-            Self::Nor { first_rule, other_rules, .. } => {
+            Self::Nor {
+                first_rule,
+                other_rules,
+                ..
+            } => {
                 let mut rules = Vec::with_capacity(other_rules.len() + 1);
                 rules.push(first_rule.clone());
                 rules.extend(other_rules.iter().cloned());
                 rules
             }
-            Self::And { first_rule, second_rule, other_rules, .. } => {
+            Self::And {
+                first_rule,
+                second_rule,
+                other_rules,
+                ..
+            } => {
                 let mut rules = Vec::with_capacity(other_rules.len() + 2);
                 rules.push(first_rule.clone());
                 rules.push(second_rule.clone());
@@ -59,7 +88,6 @@ impl Commands {
         }
     }
 }
-
 
 fn is_symlink_dir_to(path: &Path, target: &Path) -> bool {
     /*if path.starts_with("/home/user/.local/share/Steam") {
@@ -73,12 +101,17 @@ fn is_symlink_dir_to(path: &Path, target: &Path) -> bool {
         for w in w {
             match w {
                 Ok(w) => {
-                    let metadata = if let Ok(meta) = w.metadata() { meta } else { return false };
+                    let metadata = if let Ok(meta) = w.metadata() {
+                        meta
+                    } else {
+                        return false;
+                    };
                     if (metadata.is_symlink() && is_symlink_to(&w.path(), target))
-                        || (metadata.is_dir() && is_symlink_dir_to(&w.path(), target)) {
+                        || (metadata.is_dir() && is_symlink_dir_to(&w.path(), target))
+                    {
                         // has_symlinks = true;
                     } else {
-                        return false
+                        return false;
                     }
                 }
                 Err(_) => return false,
@@ -90,9 +123,11 @@ fn is_symlink_dir_to(path: &Path, target: &Path) -> bool {
     }
 }
 
-
 fn is_symlink_to(path: &Path, target: &Path) -> bool {
-    path.read_link().ok().filter(|x| x.starts_with(target)).is_some()
+    path.read_link()
+        .ok()
+        .filter(|x| x.starts_with(target))
+        .is_some()
 }
 
 #[derive(Clone, Debug)]
@@ -105,7 +140,12 @@ enum Rule {
     Exact(String, PathBuf),
 }
 
-fn add_rules_to_tree(config: &config::Config, key: &str, rule_name: &str, tree: &mut rule_tree::RulesTree<OsString, Rule>) {
+fn add_rules_to_tree(
+    config: &config::Config,
+    key: &str,
+    rule_name: &str,
+    tree: &mut rule_tree::RulesTree<OsString, Rule>,
+) {
     let mut rules = vec![rule_name.to_owned()];
     let mut added = HashSet::new();
     while let Some(rule) = rules.pop() {
@@ -116,25 +156,65 @@ fn add_rules_to_tree(config: &config::Config, key: &str, rule_name: &str, tree: 
         for rule in &config.tags.get(&rule).unwrap().rules {
             match rule {
                 config::Rule::Suffix(path, sfx) => {
-                    tree.add_rule(path, key, rule_tree::TreeRule::prepend(Rule::Suffix(rule_name.to_owned(), sfx.to_owned())));
+                    tree.add_rule(
+                        path,
+                        key,
+                        rule_tree::TreeRule::prepend(Rule::Suffix(
+                            rule_name.to_owned(),
+                            sfx.to_owned(),
+                        )),
+                    );
                 }
                 config::Rule::Dir(dir) => {
-                    tree.add_rule(dir, key, rule_tree::TreeRule::overwrite(Rule::Plain(rule_name.to_owned())));
-                },
+                    tree.add_rule(
+                        dir,
+                        key,
+                        rule_tree::TreeRule::overwrite(Rule::Plain(rule_name.to_owned())),
+                    );
+                }
                 config::Rule::File(file) => {
-                    tree.add_rule(file, key, rule_tree::TreeRule::overwrite(Rule::Plain(rule_name.to_owned())));
-                },
+                    tree.add_rule(
+                        file,
+                        key,
+                        rule_tree::TreeRule::overwrite(Rule::Plain(rule_name.to_owned())),
+                    );
+                }
                 config::Rule::Exact(name) => {
-                    tree.add_rule(name, key, rule_tree::TreeRule::prepend(Rule::Exact(rule_name.to_owned(), name.clone())));
+                    tree.add_rule(
+                        name,
+                        key,
+                        rule_tree::TreeRule::prepend(Rule::Exact(
+                            rule_name.to_owned(),
+                            name.clone(),
+                        )),
+                    );
                 }
                 config::Rule::MountPoint(path) => {
-                    tree.add_rule(path, key, rule_tree::TreeRule::prepend(Rule::MountPoint(rule_name.to_owned())));
-                },
+                    tree.add_rule(
+                        path,
+                        key,
+                        rule_tree::TreeRule::prepend(Rule::MountPoint(rule_name.to_owned())),
+                    );
+                }
                 config::Rule::SymLink(path, target) => {
-                    tree.add_rule(path, key, rule_tree::TreeRule::prepend(Rule::SymLink(rule_name.to_owned(), target.clone())));
+                    tree.add_rule(
+                        path,
+                        key,
+                        rule_tree::TreeRule::prepend(Rule::SymLink(
+                            rule_name.to_owned(),
+                            target.clone(),
+                        )),
+                    );
                 }
                 config::Rule::SymLinkDir(path, target) => {
-                    tree.add_rule(path, key, rule_tree::TreeRule::prepend(Rule::SymLinkDir(rule_name.to_owned(), target.clone())));
+                    tree.add_rule(
+                        path,
+                        key,
+                        rule_tree::TreeRule::prepend(Rule::SymLinkDir(
+                            rule_name.to_owned(),
+                            target.clone(),
+                        )),
+                    );
                 }
                 config::Rule::Tag(name) => {
                     rules.push(name.to_owned());
@@ -152,10 +232,17 @@ fn main() {
     file.read_to_end(&mut config).unwrap();
     let config = config::parse(&config).unwrap();
     let argrules = args.rules();
-    let walker = walkdir::WalkDir::new(&config.base_path).same_file_system(config.follow_mounts).follow_links(config.follow_links);
+    let walker = walkdir::WalkDir::new(&config.base_path)
+        .same_file_system(config.follow_mounts)
+        .follow_links(config.follow_links);
 
     let mut rules = rule_tree::RulesTree::new();
-    let count = if matches!(args, Commands::And { .. }) { argrules.len() } else { 1 };
+    let count = if matches!(args, Commands::And { .. }) {
+        argrules.len()
+    } else {
+        1
+    };
+    let filter = args.rule_filter();
     for (i, rule) in argrules.into_iter().enumerate() {
         if matches!(args, Commands::And { .. }) {
             add_rules_to_tree(&config, &format!("rule{}", i), &rule, &mut rules);
@@ -163,8 +250,10 @@ fn main() {
             add_rules_to_tree(&config, "rule0", &rule, &mut rules);
         }
     }
+    let dump = args.dump();
 
     let mut add_rules = vec![];
+    let mut dump_tree = rule_tree::RulesTree::<OsString, String>::new();
     for f in walker.into_iter().flatten() {
         let Ok(path) = f.path().strip_prefix(&config.base_path) else {
             continue
@@ -173,32 +262,54 @@ fn main() {
         for i in 0..count {
             let r = rules.get_rules(path, &format!("rule{i}"));
             add_rules.clear();
-            let mut m = false;
+            let mut m = None;
             for rule in r {
                 match rule.get() {
-                    Rule::Plain(_) => {
-                        m = true;
+                    Rule::Plain(name) => {
+                        if m.is_none() {
+                            m = Some(name.clone());
+                        }
                     }
-                    Rule::SymLink(_, target) => {
-                        if f.path_is_symlink() && target.as_ref().map(|target| is_symlink_to(f.path(), target)).unwrap_or(true) {
-                            m = true;
+                    Rule::SymLink(name, target) => {
+                        if f.path_is_symlink()
+                            && target
+                                .as_ref()
+                                .map(|target| is_symlink_to(f.path(), target))
+                                .unwrap_or(true)
+                            && m.is_none()
+                        {
+                            m = Some(name.clone());
                         }
                     }
                     Rule::SymLinkDir(rule_name, target) => {
-                        if !f.path_is_symlink() && f.file_type().is_dir() && target.as_ref().map(|target| is_symlink_dir_to(f.path(), target)).unwrap_or(true) {
-                            add_rules.push(rule_tree::TreeRule::overwrite(Rule::Plain(rule_name.to_owned())));
-                            m = true;
+                        if !f.path_is_symlink()
+                            && f.file_type().is_dir()
+                            && target
+                                .as_ref()
+                                .map(|target| is_symlink_dir_to(f.path(), target))
+                                .unwrap_or(true)
+                        {
+                            add_rules.push(rule_tree::TreeRule::overwrite(Rule::Plain(
+                                rule_name.to_owned(),
+                            )));
+                            if m.is_none() {
+                                m = Some(rule_name.clone());
+                            }
                         }
                     }
                     Rule::Suffix(rule_name, sfx) => {
                         if f.path().ends_with(sfx) {
-                            add_rules.push(rule_tree::TreeRule::overwrite(Rule::Plain(rule_name.to_owned())));
-                            m = true;
+                            add_rules.push(rule_tree::TreeRule::overwrite(Rule::Plain(
+                                rule_name.to_owned(),
+                            )));
+                            if m.is_none() {
+                                m = Some(rule_name.clone());
+                            }
                         }
                     }
-                    Rule::Exact(_, path2) => {
-                        if path == path2 {
-                            m = true;
+                    Rule::Exact(name, path2) => {
+                        if path == path2 && m.is_none() {
+                            m = Some(name.clone());
                         }
                     }
                     Rule::MountPoint(_) => {
@@ -212,15 +323,38 @@ fn main() {
             matches.push(m);
         }
         let m = match args {
-            Commands::Or { .. } | Commands::And { .. } => {
-                matches.iter().any(|x| *x)
-            }
-            Commands::Nor { .. } => {
-                matches.iter().all(|x| !x)
-            }
+            Commands::Or { .. } | Commands::And { .. } => matches.iter().any(|x| {
+                if let Some(x) = x {
+                    filter.is_none() || filter == Some(x)
+                } else {
+                    false
+                }
+            }),
+            Commands::Nor { .. } => matches.iter().all(|x| x.is_none()),
         };
-        if m {
+        if dump {
+            if let Some(Some(mat)) = matches.iter().find(|x| x.is_some()) {
+                dump_tree.add_rule(path, "rule", rule_tree::TreeRule::overwrite(mat.to_owned()));
+            }
+        } else if m {
             println!("{}", path.display());
         }
+    }
+    if dump {
+        fn dump(tree: &rule_tree::RulesTree<OsString, String>, path: PathBuf) {
+            if let Some(rules) = tree.top_level_rules("rule") {
+                for rule in rules {
+                    println!("{}:{}", rule.get(), path.display());
+                }
+            }
+            for (k, v) in tree.children() {
+                let mut path2 = path.clone();
+                path2.push(k);
+                dump(v, path2);
+            }
+        }
+        // dump(&dump_tree, PathBuf::new());
+        dump_tree.simplify("rule", true);
+        dump(&dump_tree, PathBuf::new());
     }
 }

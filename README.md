@@ -8,9 +8,15 @@ It can notify you of new files that existing rules don't match. This
 helps you keep track of *all* of your files, removing useless files like
 cache from programs you no longer use.
 
-The plan right now is to integrate this with home-manager, letting you
-remove exactly the files you need to remove while keeping exactly the
-files you want to keep.
+Example: if you want to create two groups of files, bind mounting each
+of them to the correct place depending on the group, you could run
+`cargo run -- or --dump rule.cfg <group1> <group2>`. This will generate
+a bunch of lines in the format `groupname:path`, giving you exactly the
+paths you need to mount.
+
+Example: if you just want to keep track of all of your files, do `cargo
+run -- nor rule.cfg <group>`, where `group` contains what are supposedly
+all of your files.
 
 ## Configuration format
 

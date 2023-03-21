@@ -1,6 +1,6 @@
-use thiserror::Error;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use thiserror::Error;
 
 enum BasicError {
     UnsupportedConfigVersion,
@@ -54,7 +54,11 @@ impl TextError {
 #[derive(Clone, Debug, Error)]
 pub enum Error {
     #[error("{0}")]
-    Text(#[from] #[source] TextError),
+    Text(
+        #[from]
+        #[source]
+        TextError,
+    ),
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -81,15 +85,10 @@ struct Line<T> {
 impl<T> Line<T> {
     fn new<S: AsRef<[u8]>>(inner: Option<T>, comment: Option<S>) -> Result<Self, BasicError> {
         let comment = comment
-            .map(|s| {
-                String::from_utf8(s.as_ref().to_owned())
-            })
+            .map(|s| String::from_utf8(s.as_ref().to_owned()))
             .transpose()
             .map_err(|_| BasicError::NonUnicodeComment)?;
-        Ok(Self {
-            inner,
-            comment,
-        })
+        Ok(Self { inner, comment })
     }
 }
 
@@ -136,7 +135,9 @@ fn parse_path(text: &[u8]) -> Result<PathBuf, BasicError> {
     #[cfg(not(unix))]
     {
         // Default to utf-8
-        Ok(PathBuf::from(String::from_utf8(text.to_owned()).map_err(|err| BasicError::InvalidPathEncoding)?))
+        Ok(PathBuf::from(
+            String::from_utf8(text.to_owned()).map_err(|err| BasicError::InvalidPathEncoding)?,
+        ))
     }
 }
 
@@ -177,11 +178,13 @@ fn parse_tag_line(text: &[u8]) -> Result<TagLine, BasicError> {
         } else {
             Ok(TagLine::TagStart(
                 String::from_utf8(text[1..text.len() - 1].to_owned())
-                    .map_err(|_| BasicError::NonUnicodeTag)?
+                    .map_err(|_| BasicError::NonUnicodeTag)?,
             ))
         }
     } else if text.first() == Some(&b'@') {
-        Ok(TagLine::Include(String::from_utf8(text[1..].to_owned()).map_err(|_| BasicError::NonUnicodeTag)?))
+        Ok(TagLine::Include(
+            String::from_utf8(text[1..].to_owned()).map_err(|_| BasicError::NonUnicodeTag)?,
+        ))
     } else {
         parse_path(text).map(TagLine::Rule)
     }
@@ -206,14 +209,17 @@ fn parse_text(text: &[u8]) -> Result<ConfigText, TextError> {
             for (i, window) in line.windows(2).enumerate() {
                 if window[1] == b'#' && window[0].is_ascii_whitespace() {
                     comment_start = Some(i);
-                    break
+                    break;
                 }
             }
             if let Some(comment_start) = comment_start {
                 if comment_start == 0 {
                     (None, Some(&line[2..]))
                 } else {
-                    (Some(&line[..comment_start]), Some(&line[comment_start + 2..]))
+                    (
+                        Some(&line[..comment_start]),
+                        Some(&line[comment_start + 2..]),
+                    )
                 }
             } else {
                 (Some(line), None)
@@ -226,7 +232,7 @@ fn parse_text(text: &[u8]) -> Result<ConfigText, TextError> {
                     if let Some(content) = content {
                         let config = parse_config(content).map_err(ferr)?;
                         if config != ConfigOption::ConfigVersion0 {
-                            return Err(ferr(BasicError::NotConfigVersion))
+                            return Err(ferr(BasicError::NotConfigVersion));
                         }
                         stage = Stage::Config;
                         options.push(Line::new(Some(config), comment).map_err(ferr)?);
@@ -237,21 +243,30 @@ fn parse_text(text: &[u8]) -> Result<ConfigText, TextError> {
                 Stage::Config => {
                     if line.first() == Some(&b'[') {
                         stage = Stage::Tags;
-                        continue 'goto
+                        continue 'goto;
                     }
-                    options.push(Line::new(content.map(parse_config).transpose().map_err(ferr)?, comment).map_err(ferr)?); 
+                    options.push(
+                        Line::new(
+                            content.map(parse_config).transpose().map_err(ferr)?,
+                            comment,
+                        )
+                        .map_err(ferr)?,
+                    );
                 }
                 Stage::Tags => {
-                    rules.push(Line::new(content.map(parse_tag_line).transpose().map_err(ferr)?, comment).map_err(ferr)?);
+                    rules.push(
+                        Line::new(
+                            content.map(parse_tag_line).transpose().map_err(ferr)?,
+                            comment,
+                        )
+                        .map_err(ferr)?,
+                    );
                 }
             }
-            break 'goto
+            break 'goto;
         }
     }
-    Ok(ConfigText {
-        options,
-        rules,
-    })
+    Ok(ConfigText { options, rules })
 }
 
 pub fn parse(text: &[u8]) -> Result<Config, Error> {
@@ -276,27 +291,28 @@ pub fn parse(text: &[u8]) -> Result<Config, Error> {
                     tag = Tag::default();
                 }
                 tag_name = Some(name);
-            },
+            }
             Some(TagLine::Include(name)) => {
-                tag.rules.push(if let Some(name) = name.strip_prefix("exact;") {
+                tag.rules
+                    .push(if let Some(name) = name.strip_prefix("exact;") {
                         Rule::Exact(name.into())
-                } else if let Some(name) = name.strip_prefix("symlink;") {
-                    if let Some((a, b)) = name.split_once(";") {
-                        Rule::SymLink(a.into(), Some(b.into()))
+                    } else if let Some(name) = name.strip_prefix("symlink;") {
+                        if let Some((a, b)) = name.split_once(";") {
+                            Rule::SymLink(a.into(), Some(b.into()))
+                        } else {
+                            Rule::SymLink(name.into(), None)
+                        }
+                    } else if let Some(name) = name.strip_prefix("symlink-dir;") {
+                        if let Some((a, b)) = name.split_once(";") {
+                            Rule::SymLinkDir(a.into(), Some(b.into()))
+                        } else {
+                            Rule::SymLinkDir(name.into(), None)
+                        }
+                    } else if let Some(name) = name.strip_prefix("mount-point;") {
+                        Rule::MountPoint(name.into())
                     } else {
-                        Rule::SymLink(name.into(), None)
-                    }
-                } else if let Some(name) = name.strip_prefix("symlink-dir;") {
-                    if let Some((a, b)) = name.split_once(";") {
-                        Rule::SymLinkDir(a.into(), Some(b.into()))
-                    } else {
-                        Rule::SymLinkDir(name.into(), None)
-                    }
-                } else if let Some(name) = name.strip_prefix("mount-point;") {
-                    Rule::MountPoint(name.into())
-                } else {
-                    Rule::Tag(name)
-                });
+                        Rule::Tag(name)
+                    });
             }
             Some(TagLine::Rule(rule)) => {
                 if let Some((a, b)) = rule.as_os_str().to_string_lossy().split_once("/**/") {

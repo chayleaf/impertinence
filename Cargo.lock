@@ -192,7 +192,7 @@ dependencies = [
 [[package]]
 name = "rule-tree"
 version = "0.1.0"
-source = "git+https://github.com/chayleaf/rule-tree.git#15bae36fe4747825d1f0c97d0da2ff88deddcd27"
+source = "git+https://github.com/chayleaf/rule-tree.git#91b2097698d4a3d0b9c59b47e5feb926994b904f"
 
 [[package]]
 name = "rustix"

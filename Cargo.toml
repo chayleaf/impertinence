@@ -10,4 +10,5 @@ clap = { version = "4.1.4", features = ["derive"] }
 thiserror = "1.0.38"
 
 rule-tree = { git = "https://github.com/chayleaf/rule-tree.git" }
+# rule-tree = { path = "../rule-tree" }
 walkdir = "2.3.3"
